@@ -48,9 +48,14 @@
                                            DSBLIT_BLEND_COLORALPHA   | \
                                            DSBLIT_COLORIZE           | \
                                            DSBLIT_ROTATE180          | \
+                                           DSBLIT_ROTATE90           | \
+                                           DSBLIT_ROTATE270          | \
+                                           DSBLIT_FLIP_HORIZONTAL    | \
+                                           DSBLIT_FLIP_VERTICAL      | \
                                            DSBLIT_SRC_PREMULTIPLY    | \
                                            DSBLIT_SRC_PREMULTCOLOR   | \
-                                           DSBLIT_SRC_COLORKEY)
+                                           DSBLIT_SRC_COLORKEY       | \
+                                           DSBLIT_DST_COLORKEY  )
 
 #define GLES2_SUPPORTED_BLITTINGFUNCTIONS (DFXL_BLIT | \
                                            DFXL_STRETCHBLIT)

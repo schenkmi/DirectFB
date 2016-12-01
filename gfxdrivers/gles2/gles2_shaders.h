@@ -34,9 +34,9 @@
 #define HIGHP       "highp"
 #define GL_POS_Y_OP "+"
 #else
-#define LOWP        ""
-#define MEDIUMP     ""
-#define HIGHP       ""
+#define LOWP        "lowp"
+#define MEDIUMP     "mediump"
+#define HIGHP       "highp"
 #define GL_POS_Y_OP "-"
 #endif
 

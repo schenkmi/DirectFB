@@ -175,7 +175,16 @@ static void
 system_get_info( CoreSystemInfo *info )
 {
      info->type = CORE_EGL;
+
+/**
+ * M.Schenk 2015.06.03
+ * CSCAPS_ALWAYS_INDIRECT needed for current screen refresh!
+ */
+#if 1
+     info->caps = CSCAPS_ACCELERATION | CSCAPS_ALWAYS_INDIRECT;
+#else
      info->caps = CSCAPS_ACCELERATION;
+#endif
 
      snprintf( info->name, DFB_CORE_SYSTEM_INFO_NAME_LENGTH, "EGL" );
 }

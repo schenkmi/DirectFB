@@ -33,6 +33,7 @@
 #ifndef __EGL_EGL_H__
 #define __EGL_EGL_H__
 
+#include <bcm_host.h>
 
 #include <EGL/egl.h>
 

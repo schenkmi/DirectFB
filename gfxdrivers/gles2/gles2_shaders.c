@@ -120,6 +120,8 @@ init_program(GLuint prog_obj,
           glDetachShader(prog_obj, shaders[0]);
           glDetachShader(prog_obj, shaders[1]);
 
+          glUseProgram( prog_obj );
+
           return DFB_TRUE;
      }
      else {
@@ -133,8 +135,6 @@ init_program(GLuint prog_obj,
 
           return DFB_FALSE;
      }
-
-     glUseProgram( prog_obj );
 }
 
 #define GET_UNIFORM_LOCATION(dev, index, name)				\

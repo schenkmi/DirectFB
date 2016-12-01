@@ -196,6 +196,10 @@ gles2_validate_DESTINATION(GLES2DriverData *gdrv,
      }
 #endif
 
+     DFBSurfaceBlittingFlags blittingflags = state->blittingflags;
+
+     dfb_simplify_blittingflags( &blittingflags );
+
      if (1/*(buffer->flags & GLES2BF_UPDATE_TARGET)*/ ||
          (gdev->prog_index != gdev->prog_last)) {
 
@@ -208,7 +212,8 @@ gles2_validate_DESTINATION(GLES2DriverData *gdrv,
 
           glViewport(0, 0, w, h);
 
-          if (state->render_options & DSRO_MATRIX) {
+          if (state->render_options & DSRO_MATRIX
+              || blittingflags & (DSBLIT_ROTATE90 | DSBLIT_FLIP_HORIZONTAL | DSBLIT_FLIP_VERTICAL)) {
                /*
              * We need a 3x3 matrix multiplication in the vertex shader to
              * support the non-affine elements of the DSRO matrix.  Load
@@ -599,7 +604,7 @@ gles2EngineSync(void *drv, void *dev)
      D_DEBUG_AT(GLES2__2D, "%s()\n", __FUNCTION__);
 
      if (gdrv->calls > 0) {
-//          glFinish();
+          glFinish();
           //eglSwapBuffers( eglGetCurrentDisplay(), eglGetCurrentSurface( EGL_DRAW ) );
           gdrv->calls = 0;
      }
@@ -705,10 +710,13 @@ gles2SetState(void                *drv,
      GLES2DeviceData       *gdev     = dev;
      StateModificationFlags modified = state->mod_hw;
      DFBBoolean             blend    = DFB_FALSE;
+     DFBSurfaceBlittingFlags blittingflags = state->blittingflags;
 
      D_DEBUG_AT(GLES2__2D,
                 "%s(state %p, accel 0x%08x) <- dest %p, modified 0x%08x\n",
                 __FUNCTION__, state, accel, state->destination, modified);
+
+     dfb_simplify_blittingflags( &blittingflags );
 
      /*
       * 1) Invalidate hardware states
@@ -830,8 +838,8 @@ gles2SetState(void                *drv,
                GLES2_INVALIDATE(BLENDFUNC);
 
                // If alpha blending is used...
-               if (state->blittingflags & (DSBLIT_BLEND_ALPHACHANNEL |
-                                           DSBLIT_BLEND_COLORALPHA)) {
+               if (blittingflags & (DSBLIT_BLEND_ALPHACHANNEL |
+                                    DSBLIT_BLEND_COLORALPHA)) {
                     // ...require valid blend functions.
                     GLES2_CHECK_VALIDATE(BLENDFUNC);
                     glEnable(GL_BLEND);
@@ -849,7 +857,7 @@ gles2SetState(void                *drv,
                 * tracked by DFB.
                 */
                if (state->render_options & DSRO_MATRIX) {
-                    if (state->blittingflags & DSBLIT_SRC_COLORKEY && !blend) {
+                    if (blittingflags & DSBLIT_SRC_COLORKEY && !blend) {
                          if (gdev->prog_index != GLES2_BLIT_COLORKEY_MAT) {
 
                               gdev->prog_index = GLES2_BLIT_COLORKEY_MAT;
@@ -859,14 +867,14 @@ gles2SetState(void                *drv,
                               glEnable(GL_BLEND);
                          }
                     }
-                    else if (state->blittingflags & DSBLIT_SRC_PREMULTIPLY) {
+                    else if (blittingflags & DSBLIT_SRC_PREMULTIPLY) {
                          if (gdev->prog_index != GLES2_BLIT_PREMULTIPLY_MAT) {
 
                               gdev->prog_index = GLES2_BLIT_PREMULTIPLY_MAT;
                               glUseProgram(gdev->progs[gdev->prog_index].obj);
                          }
                     }
-                    else if (state->blittingflags & (DSBLIT_COLORIZE | DSBLIT_BLEND_COLORALPHA | DSBLIT_SRC_PREMULTCOLOR)) {
+                    else if (blittingflags & (DSBLIT_COLORIZE | DSBLIT_BLEND_COLORALPHA | DSBLIT_SRC_PREMULTCOLOR)) {
                          if (gdev->prog_index != GLES2_BLIT_COLOR_MAT) {
 
                               gdev->prog_index = GLES2_BLIT_COLOR_MAT;
@@ -882,7 +890,7 @@ gles2SetState(void                *drv,
                     }
                }
                else {
-                    if (state->blittingflags & DSBLIT_SRC_COLORKEY && !blend) {
+                    if (blittingflags & DSBLIT_SRC_COLORKEY && !blend) {
                          if (gdev->prog_index != GLES2_BLIT_COLORKEY) {
 
                               gdev->prog_index = GLES2_BLIT_COLORKEY;
@@ -892,14 +900,14 @@ gles2SetState(void                *drv,
                               glEnable(GL_BLEND);
                          }
                     }
-                    else if (state->blittingflags & DSBLIT_SRC_PREMULTIPLY) {
+                    else if (blittingflags & DSBLIT_SRC_PREMULTIPLY) {
                          if (gdev->prog_index != GLES2_BLIT_PREMULTIPLY) {
 
                               gdev->prog_index = GLES2_BLIT_PREMULTIPLY;
                               glUseProgram(gdev->progs[gdev->prog_index].obj);
                          }
                     }
-                    else if (state->blittingflags & (DSBLIT_COLORIZE | DSBLIT_BLEND_COLORALPHA | DSBLIT_SRC_PREMULTCOLOR)) {
+                    else if (blittingflags & (DSBLIT_COLORIZE | DSBLIT_BLEND_COLORALPHA | DSBLIT_SRC_PREMULTCOLOR)) {
                          if (gdev->prog_index != GLES2_BLIT_COLOR) {
 
                               gdev->prog_index = GLES2_BLIT_COLOR;
@@ -907,10 +915,16 @@ gles2SetState(void                *drv,
                          }
                     }
                     else {
-                         if (gdev->prog_index != GLES2_BLIT) {
-
-                              gdev->prog_index = GLES2_BLIT;
-                              glUseProgram(gdev->progs[gdev->prog_index].obj);
+                         if (blittingflags & (DSBLIT_ROTATE90 | DSBLIT_FLIP_HORIZONTAL | DSBLIT_FLIP_VERTICAL)) {
+                              if (gdev->prog_index != GLES2_BLIT_MAT) {
+                                   gdev->prog_index = GLES2_BLIT_MAT;
+                                   glUseProgram(gdev->progs[gdev->prog_index].obj);
+                              }
+                         } else {
+                              if (gdev->prog_index != GLES2_BLIT) {
+                                   gdev->prog_index = GLES2_BLIT;
+                                   glUseProgram(gdev->progs[gdev->prog_index].obj);
+                              }
                          }
                     }
                }
@@ -920,7 +934,7 @@ gles2SetState(void                *drv,
                GLES2_CHECK_VALIDATE(SOURCE);
 
                // If normal blitting or color keying is used...
-               if (accel == DFXL_BLIT || (state->blittingflags & DSBLIT_SRC_COLORKEY)) {
+               if (accel == DFXL_BLIT || (blittingflags & DSBLIT_SRC_COLORKEY)) {
                     // ...don't use filtering
                     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
                     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -963,7 +977,7 @@ gles2SetState(void                *drv,
                break;
      }
 
-     gdrv->blittingflags = state->blittingflags;
+     gdrv->blittingflags = blittingflags;
 
      /*
       * prog_last is used by some state setting functions to determine if a
@@ -1096,6 +1110,22 @@ gles2FillTriangle(void *drv, void *dev, DFBTriangle *tri)
      return true;
 }
 
+static inline void
+multMatrix3fv(float* m, float *n, float *q)
+{
+     float p[9];
+     int i, j, k;
+
+     memset(p, 0, sizeof(p));
+
+     for (i = 0; i < 3; i++)
+          for (j = 0; j < 3; j++)
+               for (k = 0; k < 3; k++)
+                    p[j + 3 * i] += m[k + 3 * i] * n[j + 3 * k];
+
+     memcpy(q, p, sizeof(p));
+}
+
 /*
  * Blit a rectangle using the current hardware state.
  */
@@ -1103,6 +1133,7 @@ bool
 gles2Blit(void *drv, void *dev, DFBRectangle *srect, int dx, int dy)
 {
      GLES2DriverData *gdrv = drv;
+     GLES2DeviceData *gdev = dev;
 
      float x1 = dx;
      float y1 = dy;
@@ -1114,26 +1145,67 @@ gles2Blit(void *drv, void *dev, DFBRectangle *srect, int dx, int dy)
      float tx2 = srect->w + tx1;
      float ty2 = srect->h + ty1;
 
-     GLfloat pos[] = {
-          x1, y1,   x2, y1,   x2, y2,   x1, y2
-     };
-
+     GLfloat pos[8];
      GLfloat tex[8];
 
      D_DEBUG_AT(GLES2__2D, "%s(%4d,%4d-%4dx%4d <- %4d,%4d)\n",
                 __FUNCTION__, dx, dy, srect->w, srect->h, srect->x, srect->y);
 
-     if (gdrv->blittingflags & DSBLIT_ROTATE180) {
-          tex[0] = tx2; tex[1] = ty2;
-          tex[2] = tx1; tex[3] = ty2;
-          tex[4] = tx1; tex[5] = ty1;
-          tex[6] = tx2; tex[7] = ty1;
-     }
-     else {
-          tex[0] = tx1; tex[1] = ty1;
-          tex[2] = tx2; tex[3] = ty1;
-          tex[4] = tx2; tex[5] = ty2;
-          tex[6] = tx1; tex[7] = ty2;
+     tex[0] = tx1; tex[1] = ty1;
+     tex[2] = tx2; tex[3] = ty1;
+     tex[4] = tx2; tex[5] = ty2;
+     tex[6] = tx1; tex[7] = ty2;
+
+     if (gdrv->blittingflags & (DSBLIT_ROTATE90 | DSBLIT_FLIP_HORIZONTAL | DSBLIT_FLIP_VERTICAL)) {
+          float trfm[9], m[9];
+
+          float x0 = (x1 + x2) / 2;
+          float y0 = (y1 + y2) / 2;
+
+          pos[0] = x1 - x0; pos[1] = y1 - y0;
+          pos[2] = x2 - x0; pos[3] = y1 - y0;
+          pos[4] = x2 - x0; pos[5] = y2 - y0;
+          pos[6] = x1 - x0; pos[7] = y2 - y0;
+
+          /* identity */
+          trfm[0] = 1; trfm[3] = 0; trfm[6] = 0;
+          trfm[1] = 0; trfm[4] = 1; trfm[7] = 0;
+          trfm[2] = 0; trfm[5] = 0; trfm[8] = 1;
+
+          if (gdrv->blittingflags & DSBLIT_FLIP_HORIZONTAL) {
+               m[0] = -1; m[3] = 0; m[6] = 0;
+               m[1] = 0; m[4] = 1; m[7] = 0;
+               m[2] = 0; m[5] = 0; m[8] = 1;
+               multMatrix3fv(trfm, m, trfm);
+          }
+
+          if (gdrv->blittingflags & DSBLIT_FLIP_VERTICAL) {
+               m[0] = 1; m[3] = 0; m[6] = 0;
+               m[1] = 0; m[4] = -1; m[7] = 0;
+               m[2] = 0; m[5] = 0; m[8] = 1;
+               multMatrix3fv(trfm, m, trfm);
+          }
+
+          if (gdrv->blittingflags & DSBLIT_ROTATE90) {
+               m[0] = 0; m[3] = 1; m[6] = 0;
+               m[1] = -1; m[4] = 0; m[7] = 0;
+               m[2] = 0; m[5] = 0; m[8] = 1;
+               multMatrix3fv(trfm, m, trfm);
+          }
+
+          /* finally translate to x0, y0 */
+          m[0] = 1; m[3] = 0; m[6] = x0;
+          m[1] = 0; m[4] = 1; m[7] = y0;
+          m[2] = 0; m[5] = 0; m[8] = 1;
+          multMatrix3fv(trfm, m, trfm);
+
+          GLES2ProgramInfo *prog = &gdev->progs[gdev->prog_index];
+          glUniformMatrix3fv(prog->dfbROMatrix, 1, GL_FALSE, trfm);
+     } else {
+          pos[0] = x1; pos[1] = y1;
+          pos[2] = x2; pos[3] = y1;
+          pos[4] = x2; pos[5] = y2;
+          pos[6] = x1; pos[7] = y2;
      }
 
      glVertexAttribPointer(GLES2VA_POSITIONS, 2, GL_FLOAT, GL_FALSE, 0, pos);
@@ -1163,6 +1235,13 @@ gles2BatchBlit(void *drv, void *dev,
 
      //     D_DEBUG_AT(GLES2__2D, "%s(%4d,%4d-%4dx%4d <- %4d,%4d)\n",
      //                __FUNCTION__, dx, dy, srect->w, srect->h, srect->x, srect->y);
+
+     if (num == 1)
+          return gles2Blit(drv, dev, rects, points[0].x, points[0].y);
+
+     /* can't support these as a per-triangle transform (uniform) is required */
+     if (gdrv->blittingflags & (DSBLIT_ROTATE90 | DSBLIT_FLIP_HORIZONTAL | DSBLIT_FLIP_VERTICAL))
+          return false;
 
      for (i=0; i<num; i++) {
           float x1 = points[i].x;
@@ -1233,6 +1312,7 @@ gles2StretchBlit(void *drv, void *dev,
                  DFBRectangle *srect, DFBRectangle *drect)
 {
      GLES2DriverData *gdrv = drv;
+     GLES2DeviceData *gdev = dev;
 
      float x1 = drect->x;
      float y1 = drect->y;
@@ -1244,27 +1324,66 @@ gles2StretchBlit(void *drv, void *dev,
      float tx2 = srect->w + tx1;
      float ty2 = srect->h + ty1;
 
-     GLfloat pos[] = {
-          x1, y1,   x2, y1,   x2, y2,   x1, y2
-     };
-
+     GLfloat pos[8];
      GLfloat tex[8];
 
      D_DEBUG_AT(GLES2__2D, "%s(%4d,%4d-%4dx%4d <- %4d,%4d-%4dx%4d)\n",
                 __FUNCTION__, DFB_RECTANGLE_VALS(drect),
                 DFB_RECTANGLE_VALS(srect));
 
-     if (gdrv->blittingflags & DSBLIT_ROTATE180) {
-          tex[0] = tx2; tex[1] = ty2;
-          tex[2] = tx1; tex[3] = ty2;
-          tex[4] = tx1; tex[5] = ty1;
-          tex[6] = tx2; tex[7] = ty1;
-     }
-     else {
-          tex[0] = tx1; tex[1] = ty1;
-          tex[2] = tx2; tex[3] = ty1;
-          tex[4] = tx2; tex[5] = ty2;
-          tex[6] = tx1; tex[7] = ty2;
+     tex[0] = tx1; tex[1] = ty1;
+     tex[2] = tx2; tex[3] = ty1;
+     tex[4] = tx2; tex[5] = ty2;
+     tex[6] = tx1; tex[7] = ty2;
+
+     if (gdrv->blittingflags & (DSBLIT_ROTATE90 | DSBLIT_FLIP_HORIZONTAL | DSBLIT_FLIP_VERTICAL)) {
+          float trfm[9], m[9];
+
+          float x0 = (x1 + x2) / 2;
+          float y0 = (y1 + y2) / 2;
+
+          pos[0] = x1 - x0; pos[1] = y1 - y0;
+          pos[2] = x2 - x0; pos[3] = y1 - y0;
+          pos[4] = x2 - x0; pos[5] = y2 - y0;
+          pos[6] = x1 - x0; pos[7] = y2 - y0;
+
+          trfm[0] = 1; trfm[3] = 0; trfm[6] = 0;
+          trfm[1] = 0; trfm[4] = 1; trfm[7] = 0;
+          trfm[2] = 0; trfm[5] = 0; trfm[8] = 1;
+
+          if (gdrv->blittingflags & DSBLIT_FLIP_HORIZONTAL) {
+               m[0] = -1; m[3] = 0; m[6] = 0;
+               m[1] = 0; m[4] = 1; m[7] = 0;
+               m[2] = 0; m[5] = 0; m[8] = 1;
+               multMatrix3fv(trfm, m, trfm);
+          }
+
+          if (gdrv->blittingflags & DSBLIT_FLIP_VERTICAL) {
+               m[0] = 1; m[3] = 0; m[6] = 0;
+               m[1] = 0; m[4] = -1; m[7] = 0;
+               m[2] = 0; m[5] = 0; m[8] = 1;
+               multMatrix3fv(trfm, m, trfm);
+          }
+
+          if (gdrv->blittingflags & DSBLIT_ROTATE90) {
+               m[0] = 0; m[3] = 1; m[6] = 0;
+               m[1] = -1; m[4] = 0; m[7] = 0;
+               m[2] = 0; m[5] = 0; m[8] = 1;
+               multMatrix3fv(trfm, m, trfm);
+          }
+
+          m[0] = 1; m[3] = 0; m[6] = x0;
+          m[1] = 0; m[4] = 1; m[7] = y0;
+          m[2] = 0; m[5] = 0; m[8] = 1;
+          multMatrix3fv(trfm, m, trfm);
+
+          GLES2ProgramInfo *prog = &gdev->progs[gdev->prog_index];
+          glUniformMatrix3fv(prog->dfbROMatrix, 1, GL_FALSE, trfm);
+     } else {
+          pos[0] = x1; pos[1] = y1;
+          pos[2] = x2; pos[3] = y1;
+          pos[4] = x2; pos[5] = y2;
+          pos[6] = x1; pos[7] = y2;
      }
 
      glVertexAttribPointer(GLES2VA_POSITIONS, 2, GL_FLOAT, GL_FALSE, 0, pos);
